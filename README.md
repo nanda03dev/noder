@@ -1,4 +1,4 @@
-# noder 🧵  
+# Noder.go 🧵  
 Effortlessly execute CPU-intensive tasks in parallel with worker threads.  
 **noder** simplifies concurrency in Node.js by providing support for creating individual workers and worker pools with easy-to-use syntax.  
 
@@ -7,21 +7,18 @@ Effortlessly execute CPU-intensive tasks in parallel with worker threads.
 - **Worker Pool Support:** Manage multiple tasks with a pool of workers.  
 - **Async/Await Friendly:** Easily handle results from tasks.  
 
----
 
 ## Installation 📦  
 ```bash
-npm install noder
+npm install noder.go
 ```
-
----
 
 ## Usage 📖  
 
 ### 1. Execute a Single Task  
 Run a CPU-intensive task in its own worker thread:  
 ```javascript
-const { noder } = require('noder');
+const { noder } = require('noder.go');
 
 const fib = (num) => (num <= 1 ? num : fib(num - 1) + fib(num - 2));
 
@@ -31,12 +28,10 @@ const fib = (num) => (num <= 1 ? num : fib(num - 1) + fib(num - 2));
 })();
 ```
 
----
-
 ### 2. Using a Worker Pool  
 Efficiently manage multiple tasks with a worker pool:  
 ```javascript
-const { NoderPool } = require('noder');
+const { NoderPool } = require('noder.go');
 
 const fib = (num) => (num <= 1 ? num : fib(num - 1) + fib(num - 2));
 
@@ -55,8 +50,6 @@ const noderPool = new NoderPool({ workerCount: 7 });
 })();
 ```
 
----
-
 ## Key Concepts 🗝️  
 
 ### 1. **Worker Threads**  
@@ -68,8 +61,6 @@ With `NoderPool`, you can:
 - Add jobs to the pool.  
 - Retrieve results after all tasks are completed.  
 
----
-
 ## API Reference 📚  
 
 ### **noder(fn, ...params): Promise**  
@@ -79,7 +70,6 @@ With `NoderPool`, you can:
   - `params` (Array): The parameters to pass to the function.  
 - **Returns**: A `Promise` resolving to the result of the function.  
 
----
 
 ### **NoderPool(config)**  
 Creates a pool of workers.  
@@ -96,8 +86,6 @@ Creates a pool of workers.
 - **`result(): Promise<Array>`**  
   Waits for all jobs to complete and returns their results.  
 
----
-
 ## Performance Tips 🏎️  
 
 1. **Worker Count**:  
@@ -106,21 +94,13 @@ Creates a pool of workers.
 2. **Task Complexity**:  
    For smaller tasks, the overhead of creating workers might outweigh the performance benefits. Use workers for CPU-intensive tasks.  
 
----
-
 ## License 📝  
 This package is licensed under the [MIT License](./LICENSE).  
 
----
-
 ## Contributing 🤝  
 Contributions are welcome! If you have ideas for improvements or features, feel free to open an issue or submit a pull request.  
-
----
 
 ## Acknowledgments 🙌  
 This package leverages Node.js `worker_threads` to make parallel execution easy for developers.  
 
 Enjoy building faster and more efficient Node.js applications with **noder**! 🚀  
-
----
