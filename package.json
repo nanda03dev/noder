@@ -1,0 +1,28 @@
+{
+  "name": "noder.go",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "dev-test": "npx tsc && node dist/test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nanda03dev/noder"
+  },
+  "author": "Nandakumar",
+  "license": "MIT",
+  "keywords": [
+    "node",
+    "typescript",
+    "workers",
+    "pool"
+  ],
+  "description": "",
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2"
+  }
+}
