@@ -25,6 +25,6 @@ function fib(n) {
 }
 (function main() {
     // Uncomment to test individual functions
-    testNoder();
-    // testNoderPool();
+    // testNoder();
+    testNoderPool();
 })();

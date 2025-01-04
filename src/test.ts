@@ -29,6 +29,6 @@ function fib(n: number): number {
 
 (function main(): void {
     // Uncomment to test individual functions
-    testNoder();
-    // testNoderPool();
+    // testNoder();
+    testNoderPool();
 })();

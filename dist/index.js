@@ -90,7 +90,7 @@ class NoderPool {
                     break;
                 case constants_1.WORKER_COMPLETED:
                     this.completed_worker_count++;
-                    this.terminateAllWorkers();
+                    this.checkAndTerminateAllWorkers();
                     this.eventEmitter.emit(constants_1.WORKER_COMPLETED, data);
                     break;
             }
@@ -116,12 +116,15 @@ class NoderPool {
             }
         }
     }
-    terminateAllWorkers() {
+    checkAndTerminateAllWorkers() {
         if (this.checkIsWorkerCompleted()) {
-            for (const worker of this.workers) {
-                worker.removeAllListeners();
-                worker.terminate();
-            }
+            this.terminateAllWorkers();
+        }
+    }
+    terminateAllWorkers() {
+        for (const worker of this.workers) {
+            worker.removeAllListeners();
+            worker.terminate();
         }
     }
     add(fn, ...params) {
@@ -132,6 +135,10 @@ class NoderPool {
     }
     result() {
         return new Promise((resolve) => {
+            if (this.job_count < 1) {
+                this.terminateAllWorkers();
+                return resolve(this.results);
+            }
             const onWorkerCompleted = () => {
                 if (this.checkIsWorkerCompleted()) {
                     this.eventEmitter.removeListener(constants_1.WORKER_COMPLETED, onWorkerCompleted); // Manually remove listener
