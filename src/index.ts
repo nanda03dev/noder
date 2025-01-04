@@ -1,132 +1,189 @@
 import { Worker } from 'worker_threads';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { WORKER_COMPLETED, WORKER_ERROR, WORKER_RESULT } from './constants';
+import { ERROR_NO_ACTIVE_WORKERS, WORKER_COMPLETED, WORKER_ERROR, WORKER_RESULT } from './constants';
 
 interface NoderPoolConfig {
     workerCount: number;
+    autoTerminate?: boolean
 }
 
 export class NoderPool {
-    private readonly worker_max_count = 30;
-    private readonly worker_min_count = 2;
-    private last_selected_worker_index = 0;
+    private readonly MAX_WORKER_COUNT = 30;
+    private readonly MIN_WORKER_COUNT = 2;
 
-    private job_count = 0;
-    private completed_job_count = 0;
-    private completed_worker_count = 0;
+    // Index of the last selected worker
+    private lastWorkerIndex = 0;
 
-    private force_stop = false
+    // Number of jobs assigned to workers
+    private totalAssignedJobs = 0;
+
+    // Number of completed jobs
+    private totalCompletedJobs = 0;
+
+    // Number of workers that completed all their jobs
+    private totalCompletedWorkers = 0;
+
+    // Flag to indicate whether workers are terminated
+    private areWorkersTerminated = false;
+
+    // Flag for forcefully stopping workers
+    private forceStop = false;
+
+    // Worker pool configuration
+    // workerCount - Number of workers initialized
+    // autoTerminate - If true, workers will automatically terminate after completing assigned jobs.
+    //                 If false, manual termination is required by calling the terminate() method.
+    private config: NoderPoolConfig = { workerCount: this.MIN_WORKER_COUNT, autoTerminate: true };
 
     private workers: Worker[] = [];
-    private config: NoderPoolConfig = { workerCount: this.worker_min_count };
     private results: any[] = [];
     private eventEmitter: EventEmitter = new EventEmitter();
 
     constructor(config: NoderPoolConfig = { workerCount: 2 }) {
-        if (config.workerCount > this.worker_max_count) {
-            console.warn(`Warning: You have requested to create ${config.workerCount} workers, which exceeds the recommended limit of ${this.worker_max_count} workers.`);
-            console.warn('Using too many workers may lead to performance issues or system resource constraints.');
-            console.warn('It is recommended to adjust the worker count to a lower value.');
+        if (config.workerCount > this.MAX_WORKER_COUNT) {
+            console.warn(
+                `Warning: You have requested to create ${config.workerCount} workers, exceeding the recommended limit of ${this.MAX_WORKER_COUNT}.`
+            );
+            console.warn('Using too many workers may lead to performance or system resource issues.');
+            console.warn('It is advised to reduce the worker count.');
         }
         this.config = config;
-        this.spawnWorkers();
+        this.initializeWorkers();
     }
 
-    private spawnWorkers(): void {
-        const workerFile = path.resolve(__dirname, 'worker.js');
+    private initializeWorkers(): void {
+        const workerScript = path.resolve(__dirname, 'worker.js');
         for (let i = 0; i < this.config.workerCount; i++) {
-            const worker = new Worker(workerFile);
+            const worker = new Worker(workerScript);
             this.workers.push(worker);
-            this.listenFromWorker(worker);
+            this.setupWorkerListeners(worker);
         }
     }
 
-    private getWorker(): Worker {
-        const workerLength = this.workers.length;
-        if (this.last_selected_worker_index >= workerLength) {
-            this.last_selected_worker_index = 0;
+    private getNextWorker(): Worker {
+        const totalWorkers = this.workers.length;
+        if (this.lastWorkerIndex >= totalWorkers) {
+            this.lastWorkerIndex = 0;
         }
-        this.last_selected_worker_index++
-        return this.workers[this.last_selected_worker_index - 1];
+        this.lastWorkerIndex++;
+        return this.workers[this.lastWorkerIndex - 1];
     }
 
-    private listenFromWorker(worker: Worker): void {
+    private setupWorkerListeners(worker: Worker): void {
         worker.on('message', (message) => {
             const { event, data } = message;
             switch (event) {
                 case WORKER_RESULT:
                     this.results.push(data);
-                    this.completed_job_count += 1;
-                    this.sendWorkCompleteEvent()
+                    this.totalCompletedJobs++;
+                    this.notifyWorkersIfJobsComplete();
                     break;
                 case WORKER_ERROR:
-                    this.completed_job_count += 1;
-                    this.sendWorkCompleteEvent()
+                    this.totalCompletedJobs++;
+                    this.notifyWorkersIfJobsComplete();
                     break;
                 case WORKER_COMPLETED:
-                    this.completed_worker_count++
-                    this.checkAndTerminateAllWorkers()
+                    this.totalCompletedWorkers++;
+                    this.terminateWorkersIfAllComplete();
                     this.eventEmitter.emit(WORKER_COMPLETED, data);
                     break;
             }
         });
     }
 
-    private checkIsJobCompleted(): boolean {
-        return this.completed_job_count >= this.job_count;
+    // Check if all jobs are completed
+    private areAllJobsCompleted(): boolean {
+        return this.totalCompletedJobs >= this.totalAssignedJobs;
     }
-    private checkIsWorkerCompleted(): boolean {
-        return this.completed_worker_count >= this.workers.length
+
+    // Check if all workers have completed their jobs
+    private areAllWorkersCompleted(): boolean {
+        return this.totalCompletedWorkers >= this.workers.length;
     }
-    private sendWorkCompleteEvent(): void {
-        if (this.checkIsJobCompleted()) {
+
+    // Notify workers when all jobs are completed
+    private notifyWorkersIfJobsComplete(): void {
+        if (this.areAllJobsCompleted()) {
             for (const worker of this.workers) {
                 worker.postMessage({ isCompleted: true });
             }
         }
     }
 
-    private sendWorkStopEvent() {
-        if (this.force_stop) {
+    // Notify workers to stop execution
+    private notifyWorkersToStop() {
+        if (this.forceStop) {
             for (const worker of this.workers) {
                 worker.postMessage({ isStopped: true });
             }
         }
     }
 
-    private checkAndTerminateAllWorkers() {
-        if (this.checkIsWorkerCompleted()) {
-            this.terminateAllWorkers()
+    // Terminate workers if autoTerminate is enabled or all workers are completed
+    private terminateWorkersIfAllComplete() {
+        if (this.canAutoTerminate() && this.areAllWorkersCompleted()) {
+            this.terminateAllWorkers();
         }
     }
 
+    // Terminate all workers and clean up
     private terminateAllWorkers() {
         for (const worker of this.workers) {
             worker.removeAllListeners();
-            worker.terminate()
+            worker.terminate();
         }
+        this.areWorkersTerminated = true;
+        this.clearWorkerPool();
     }
 
+    private canAutoTerminate(): boolean {
+        return this.config?.autoTerminate == true;
+    }
 
-    public add(fn: (...args: any[]) => any, ...params: unknown[]): void {
-        const worker = this.getWorker();
+    // Reset the worker pool state
+    private resetPoolState() {
+        this.lastWorkerIndex = 0;
+        this.totalAssignedJobs = 0;
+        this.totalCompletedJobs = 0;
+        this.totalCompletedWorkers = 0;
+        this.forceStop = false;
+    }
+
+    private clearWorkerPool() {
+        this.workers = [];
+    }
+
+    private clearResults() {
+        this.results = [];
+    }
+
+    // Add a new job to the worker pool
+    public add(fn: (...args: any[]) => any, ...params: unknown[]): void | Error {
+        if (this.areWorkersTerminated) {
+            return new Error(ERROR_NO_ACTIVE_WORKERS);
+        }
+        const worker = this.getNextWorker();
         const serializedFn = fn.toString();
         worker.postMessage({ fn: serializedFn, params });
-        this.job_count += 1;
+        this.totalAssignedJobs++;
     }
 
-
+    // Retrieve results as a Promise
     public result(): Promise<any[]> {
         return new Promise((resolve) => {
-            if (this.job_count < 1) {
-                this.terminateAllWorkers()
+            if (this.totalAssignedJobs < 1) {
+                this.terminateAllWorkers();
                 return resolve(this.results);
             }
+
             const onWorkerCompleted = () => {
-                if (this.checkIsWorkerCompleted()) {
-                    this.eventEmitter.removeListener(WORKER_COMPLETED, onWorkerCompleted);  // Manually remove listener
-                    return resolve(this.results);
+                if (this.areAllWorkersCompleted()) {
+                    this.eventEmitter.removeListener(WORKER_COMPLETED, onWorkerCompleted);
+                    const finalResults = [...this.results];
+                    this.resetPoolState();
+                    this.clearResults();
+                    return resolve(finalResults);
                 }
             };
 
@@ -134,9 +191,21 @@ export class NoderPool {
         });
     }
 
+    // Stop all worker execution
     public stop() {
-        this.force_stop = true
-        this.sendWorkStopEvent()
+        this.forceStop = true;
+        this.notifyWorkersToStop();
+    }
+
+    // Manually terminate all workers
+    public async terminate() {
+        await this.result()
+        this.config.autoTerminate = true
+
+        this.terminateAllWorkers()
+        this.resetPoolState();
+        this.clearWorkerPool();
+        this.clearResults();
     }
 }
 

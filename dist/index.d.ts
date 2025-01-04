@@ -1,31 +1,38 @@
 interface NoderPoolConfig {
     workerCount: number;
+    autoTerminate?: boolean;
 }
 export declare class NoderPool {
-    private readonly worker_max_count;
-    private readonly worker_min_count;
-    private last_selected_worker_index;
-    private job_count;
-    private completed_job_count;
-    private completed_worker_count;
-    private force_stop;
-    private workers;
+    private readonly MAX_WORKER_COUNT;
+    private readonly MIN_WORKER_COUNT;
+    private lastWorkerIndex;
+    private totalAssignedJobs;
+    private totalCompletedJobs;
+    private totalCompletedWorkers;
+    private areWorkersTerminated;
+    private forceStop;
     private config;
+    private workers;
     private results;
     private eventEmitter;
     constructor(config?: NoderPoolConfig);
-    private spawnWorkers;
-    private getWorker;
-    private listenFromWorker;
-    private checkIsJobCompleted;
-    private checkIsWorkerCompleted;
-    private sendWorkCompleteEvent;
-    private sendWorkStopEvent;
-    private checkAndTerminateAllWorkers;
+    private initializeWorkers;
+    private getNextWorker;
+    private setupWorkerListeners;
+    private areAllJobsCompleted;
+    private areAllWorkersCompleted;
+    private notifyWorkersIfJobsComplete;
+    private notifyWorkersToStop;
+    private terminateWorkersIfAllComplete;
     private terminateAllWorkers;
-    add(fn: (...args: any[]) => any, ...params: unknown[]): void;
+    private canAutoTerminate;
+    private resetPoolState;
+    private clearWorkerPool;
+    private clearResults;
+    add(fn: (...args: any[]) => any, ...params: unknown[]): void | Error;
     result(): Promise<any[]>;
     stop(): void;
+    terminate(): Promise<void>;
 }
 export declare const noder: (fn: (...args: any[]) => any, ...params: unknown[]) => Promise<any>;
 export {};

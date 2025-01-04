@@ -40,117 +40,171 @@ const events_1 = require("events");
 const constants_1 = require("./constants");
 class NoderPool {
     constructor(config = { workerCount: 2 }) {
-        this.worker_max_count = 30;
-        this.worker_min_count = 2;
-        this.last_selected_worker_index = 0;
-        this.job_count = 0;
-        this.completed_job_count = 0;
-        this.completed_worker_count = 0;
-        this.force_stop = false;
+        this.MAX_WORKER_COUNT = 30;
+        this.MIN_WORKER_COUNT = 2;
+        // Index of the last selected worker
+        this.lastWorkerIndex = 0;
+        // Number of jobs assigned to workers
+        this.totalAssignedJobs = 0;
+        // Number of completed jobs
+        this.totalCompletedJobs = 0;
+        // Number of workers that completed all their jobs
+        this.totalCompletedWorkers = 0;
+        // Flag to indicate whether workers are terminated
+        this.areWorkersTerminated = false;
+        // Flag for forcefully stopping workers
+        this.forceStop = false;
+        // Worker pool configuration
+        // workerCount - Number of workers initialized
+        // autoTerminate - If true, workers will automatically terminate after completing assigned jobs.
+        //                 If false, manual termination is required by calling the terminate() method.
+        this.config = { workerCount: this.MIN_WORKER_COUNT, autoTerminate: true };
         this.workers = [];
-        this.config = { workerCount: this.worker_min_count };
         this.results = [];
         this.eventEmitter = new events_1.EventEmitter();
-        if (config.workerCount > this.worker_max_count) {
-            console.warn(`Warning: You have requested to create ${config.workerCount} workers, which exceeds the recommended limit of ${this.worker_max_count} workers.`);
-            console.warn('Using too many workers may lead to performance issues or system resource constraints.');
-            console.warn('It is recommended to adjust the worker count to a lower value.');
+        if (config.workerCount > this.MAX_WORKER_COUNT) {
+            console.warn(`Warning: You have requested to create ${config.workerCount} workers, exceeding the recommended limit of ${this.MAX_WORKER_COUNT}.`);
+            console.warn('Using too many workers may lead to performance or system resource issues.');
+            console.warn('It is advised to reduce the worker count.');
         }
         this.config = config;
-        this.spawnWorkers();
+        this.initializeWorkers();
     }
-    spawnWorkers() {
-        const workerFile = path.resolve(__dirname, 'worker.js');
+    initializeWorkers() {
+        const workerScript = path.resolve(__dirname, 'worker.js');
         for (let i = 0; i < this.config.workerCount; i++) {
-            const worker = new worker_threads_1.Worker(workerFile);
+            const worker = new worker_threads_1.Worker(workerScript);
             this.workers.push(worker);
-            this.listenFromWorker(worker);
+            this.setupWorkerListeners(worker);
         }
     }
-    getWorker() {
-        const workerLength = this.workers.length;
-        if (this.last_selected_worker_index >= workerLength) {
-            this.last_selected_worker_index = 0;
+    getNextWorker() {
+        const totalWorkers = this.workers.length;
+        if (this.lastWorkerIndex >= totalWorkers) {
+            this.lastWorkerIndex = 0;
         }
-        this.last_selected_worker_index++;
-        return this.workers[this.last_selected_worker_index - 1];
+        this.lastWorkerIndex++;
+        return this.workers[this.lastWorkerIndex - 1];
     }
-    listenFromWorker(worker) {
+    setupWorkerListeners(worker) {
         worker.on('message', (message) => {
             const { event, data } = message;
             switch (event) {
                 case constants_1.WORKER_RESULT:
                     this.results.push(data);
-                    this.completed_job_count += 1;
-                    this.sendWorkCompleteEvent();
+                    this.totalCompletedJobs++;
+                    this.notifyWorkersIfJobsComplete();
                     break;
                 case constants_1.WORKER_ERROR:
-                    this.completed_job_count += 1;
-                    this.sendWorkCompleteEvent();
+                    this.totalCompletedJobs++;
+                    this.notifyWorkersIfJobsComplete();
                     break;
                 case constants_1.WORKER_COMPLETED:
-                    this.completed_worker_count++;
-                    this.checkAndTerminateAllWorkers();
+                    this.totalCompletedWorkers++;
+                    this.terminateWorkersIfAllComplete();
                     this.eventEmitter.emit(constants_1.WORKER_COMPLETED, data);
                     break;
             }
         });
     }
-    checkIsJobCompleted() {
-        return this.completed_job_count >= this.job_count;
+    // Check if all jobs are completed
+    areAllJobsCompleted() {
+        return this.totalCompletedJobs >= this.totalAssignedJobs;
     }
-    checkIsWorkerCompleted() {
-        return this.completed_worker_count >= this.workers.length;
+    // Check if all workers have completed their jobs
+    areAllWorkersCompleted() {
+        return this.totalCompletedWorkers >= this.workers.length;
     }
-    sendWorkCompleteEvent() {
-        if (this.checkIsJobCompleted()) {
+    // Notify workers when all jobs are completed
+    notifyWorkersIfJobsComplete() {
+        if (this.areAllJobsCompleted()) {
             for (const worker of this.workers) {
                 worker.postMessage({ isCompleted: true });
             }
         }
     }
-    sendWorkStopEvent() {
-        if (this.force_stop) {
+    // Notify workers to stop execution
+    notifyWorkersToStop() {
+        if (this.forceStop) {
             for (const worker of this.workers) {
                 worker.postMessage({ isStopped: true });
             }
         }
     }
-    checkAndTerminateAllWorkers() {
-        if (this.checkIsWorkerCompleted()) {
+    // Terminate workers if autoTerminate is enabled or all workers are completed
+    terminateWorkersIfAllComplete() {
+        if (this.canAutoTerminate() && this.areAllWorkersCompleted()) {
             this.terminateAllWorkers();
         }
     }
+    // Terminate all workers and clean up
     terminateAllWorkers() {
         for (const worker of this.workers) {
             worker.removeAllListeners();
             worker.terminate();
         }
+        this.areWorkersTerminated = true;
+        this.clearWorkerPool();
     }
+    canAutoTerminate() {
+        return this.config?.autoTerminate == true;
+    }
+    // Reset the worker pool state
+    resetPoolState() {
+        this.lastWorkerIndex = 0;
+        this.totalAssignedJobs = 0;
+        this.totalCompletedJobs = 0;
+        this.totalCompletedWorkers = 0;
+        this.forceStop = false;
+    }
+    clearWorkerPool() {
+        this.workers = [];
+    }
+    clearResults() {
+        this.results = [];
+    }
+    // Add a new job to the worker pool
     add(fn, ...params) {
-        const worker = this.getWorker();
+        if (this.areWorkersTerminated) {
+            return new Error(constants_1.ERROR_NO_ACTIVE_WORKERS);
+        }
+        const worker = this.getNextWorker();
         const serializedFn = fn.toString();
         worker.postMessage({ fn: serializedFn, params });
-        this.job_count += 1;
+        this.totalAssignedJobs++;
     }
+    // Retrieve results as a Promise
     result() {
         return new Promise((resolve) => {
-            if (this.job_count < 1) {
+            if (this.totalAssignedJobs < 1) {
                 this.terminateAllWorkers();
                 return resolve(this.results);
             }
             const onWorkerCompleted = () => {
-                if (this.checkIsWorkerCompleted()) {
-                    this.eventEmitter.removeListener(constants_1.WORKER_COMPLETED, onWorkerCompleted); // Manually remove listener
-                    return resolve(this.results);
+                if (this.areAllWorkersCompleted()) {
+                    this.eventEmitter.removeListener(constants_1.WORKER_COMPLETED, onWorkerCompleted);
+                    const finalResults = [...this.results];
+                    this.resetPoolState();
+                    this.clearResults();
+                    return resolve(finalResults);
                 }
             };
             this.eventEmitter.on(constants_1.WORKER_COMPLETED, onWorkerCompleted);
         });
     }
+    // Stop all worker execution
     stop() {
-        this.force_stop = true;
-        this.sendWorkStopEvent();
+        this.forceStop = true;
+        this.notifyWorkersToStop();
+    }
+    // Manually terminate all workers
+    async terminate() {
+        await this.result();
+        this.config.autoTerminate = true;
+        this.terminateAllWorkers();
+        this.resetPoolState();
+        this.clearWorkerPool();
+        this.clearResults();
     }
 }
 exports.NoderPool = NoderPool;
