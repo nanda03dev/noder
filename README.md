@@ -124,10 +124,6 @@ Creates a pool of workers.
 
 When `autoTerminate` is set to `false`, workers will remain active even after completing their tasks, allowing you to reuse them for additional jobs. In such cases, you must explicitly call the `terminate` method to clean up resources. **Important:** Ensure the `terminate` function is called only after collecting all results using `result()`; otherwise, results from workers may be lost.
 
-Here’s the corrected version of the **Methods** section with appropriate descriptions:  
-
----
-
 #### **Methods**  
 - **`add(fn, ...params): void | Error`**  
   Adds a job to the pool.  
